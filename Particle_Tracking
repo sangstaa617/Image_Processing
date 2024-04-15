@@ -1,0 +1,146 @@
+import cv2
+import sys
+import numpy as np
+import os
+
+# define the parent directory
+parent_directory = input("Enter the parent directory for the results: ")
+
+filename = input("Enter the file name: ")
+
+# extract the frame rate from the filename
+framerate = int(filename.split('.')[1])
+
+# define the name of the drop folder
+drop_folder = f"{filename.split('.')[0]}.data"
+
+# join the drop folder to the main directory
+data_path = os.path.join(parent_directory, drop_folder)
+
+# make the folder
+os.makedirs(data_path, exist_ok=True)
+
+if __name__ == '__main__':
+
+    # Read video
+    video = cv2.VideoCapture(parent_directory + '/' + filename)
+
+    # Exit if video is not opened.
+    if not video.isOpened():
+        print("Could not open video")
+        sys.exit()
+
+    # Read first frame.
+    ok, frame = video.read()
+
+    if not ok:
+        print('Cannot read video file')
+        sys.exit()
+
+    # Get the width and height of the video
+    frame_width, frame_height = int(video.get(cv2.CAP_PROP_FRAME_WIDTH)), int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_size = [frame_width, frame_height]
+
+    # Initialize the lists
+    positionx_list, positionz_list, velocity_list, ip_angle_list, box_length_list, box_width_list = [], [], [], [], [], []
+    factor = 0
+
+    while True:
+        # Read a new frame
+        ok, frame = video.read()
+
+        if not ok:
+            break
+
+        frame_time = 1/framerate
+
+        # make a copy of the image
+        display = frame.copy()
+
+        # make the image grayscale
+        display = cv2.cvtColor(display, cv2.COLOR_BGR2GRAY)
+
+        # make a mask the size of the image
+        mask = np.zeros(frame.shape, dtype=np.uint8)
+
+        # use a threshold to binarize the new image and then invert it
+        (thresh, display) = cv2.threshold(display, 70, 255, cv2.THRESH_BINARY_INV)
+
+        # find all the contours in the binary image
+        contours, hierarchy = cv2.findContours(display, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+        # find all the areas of the contours
+        areas = [cv2.contourArea(contour) for contour in contours]
+
+        # find the largest contour in the image (should be the particle of interest)
+        for i in range(len(areas)):
+            if cv2.contourArea(contours[i]) == max(areas):
+                particle_contour = contours[i]
+                break
+
+        if ok:
+            # Draw the contours on the mask
+            cv2.drawContours(mask, contours, 0,  (255, 255, 255), thickness=-1)
+
+            # bound the object in a rectangle
+            rect = cv2.minAreaRect(particle_contour)
+            box = cv2.boxPoints(rect)
+            box = np.intp(box)
+            cv2.drawContours(frame, [box], 0, (0, 255, 0), 2)
+
+            # record the centroid and angle
+            curr_centroid = rect[0]
+            curr_angle = 90 - rect[2]
+
+            # if the left side is higher than the right side, make the angle negative
+            if box[1][0] < box[3][0]:
+                factor = 90
+            else:
+                factor = 0
+            if curr_angle != 0:
+                curr_angle = curr_angle - factor
+
+            # find the length and width of the object
+            if rect[1][1] > rect[1][0]:
+                box_length = rect[1][1]
+                box_width = rect[1][0]
+            elif rect[1][0] > rect[1][1]:
+                box_length = rect[1][0]
+                box_width = rect[1][1]
+
+            # record the dimensions
+            ip_angle_list.append(curr_angle)
+            box_length_list.append(box_length)
+            box_width_list.append(box_width)
+            positionx_list.append(curr_centroid[0])
+            positionz_list.append(curr_centroid[1])
+
+        else:
+            # Tracking failure
+            cv2.putText(frame, "Tracking failure detected", (80, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+
+        # Display values on frame
+        cv2.putText(frame, "Z Position : " + str(curr_centroid[1]), (80, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75,
+                     (50, 170, 50), 2)
+        cv2.putText(frame, "X Position : " + str(curr_centroid[0]), (80, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50, 170, 50), 2)
+
+        # Display result
+
+        cv2.namedWindow("Mask", cv2.WND_PROP_FULLSCREEN)
+        cv2.imshow("Masked Image", frame)
+
+        # Exit if ESC pressed
+        k = cv2.waitKey(1) & 0xff
+        if k == 27:
+            break
+
+# put the lists into columns
+x_data = np.array(positionx_list).reshape(-1, 1)
+z_data = np.array(positionz_list).reshape(-1, 1)
+po_data = np.array(ip_angle_list).reshape(-1, 1)
+
+# Save the raw data to a text file
+np.savetxt(f'{data_path}/x_data', x_data, fmt='%.6f', delimiter='\t')
+np.savetxt(f'{data_path}/z_data', z_data, fmt='%.6f', delimiter='\t')
+np.savetxt(f'{data_path}/po_data', po_data, fmt='%.6f', delimiter='\t')
+np.savetxt(f'{data_path}/frame_size', frame_size, fmt='%.6f', delimiter='\t')
