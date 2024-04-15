@@ -1,0 +1,31 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from Gaussian_Smoothing import gaussianSmoothing as gs
+
+data_path = input("Enter the path to the text file: ")
+
+with open(data_path, 'r') as file:
+    data_list = file.readlines()
+data_list = [float(line.strip()) for line in data_list]
+
+# create a range of kernel values to test
+kernel_size = np.linspace(1, 121, 120)
+
+variance_list = []
+kernel_list = []
+
+# test the variance of each kernel size
+for size in kernel_size:
+    smooth_p, smooth_v, smooth_a = gs(size, data_list)
+
+    # average of the squared differences for acceleration
+    variance = np.var(smooth_a)
+
+    variance_list.append(variance)
+    kernel_list.append(size)
+
+fig1, ax = plt.subplots(1, 1, figsize=(7.5, 7.5))
+ax.scatter(kernel_list, np.log(variance_list))
+plt.xlabel("Kernel Size")
+plt.ylabel("Variance")
+plt.show()
