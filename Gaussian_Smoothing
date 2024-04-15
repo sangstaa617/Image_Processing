@@ -1,0 +1,39 @@
+import numpy as np
+
+def gaussianSmoothing(numPoints, data_list):
+    # Sigma Depends on the number of points x you choose to evaluate the gaussian at
+    # Evaluating over five points means the domain of x would be [-2,2]
+    # with a list of x being [-2, -1, 0, 1, 2] for a total of 5 points
+    chosen_wind_val = 1.5
+    N = (numPoints - 1) / 2
+    sigma = N / chosen_wind_val
+    x = np.arange(-N, N + 1)
+
+    # convert the position list into an array
+    data_array = np.array(data_list)
+
+    # Generate the Gaussian window
+    gaussian_window = 1 / (sigma * (2 * np.pi) ** 0.5) * np.exp(-(x**2)/(2*sigma**2))
+
+    # Generate the first and second derivative of the gaussian window
+    gaussian_1d = -( x/sigma**2 )*gaussian_window
+    gaussian_2d = ((x**2/sigma**4) - (1/sigma**2))*gaussian_window
+
+
+    # Normalizations
+    gaussian_window /= np.sum(gaussian_window)
+
+    # First Derivative has a multiple of x to avoid dividing by zero
+    gaussian_1d /= -np.sum(x * gaussian_1d)
+
+    # Second Derivative has correction factor and multiple of x^2 to avoid dividing by 0
+    A = 2 / (np.sum(x ** 2 * gaussian_2d) - 1 / x.shape[0] * np.sum(gaussian_2d) * np.sum(x ** 2))
+    B = -A / x.shape[0] * np.sum(gaussian_2d)
+    gaussian_2d = A * gaussian_2d + B
+
+    # Smooth the position data using convolution with the Gaussian window
+    smoothed_position = np.convolve(data_array, gaussian_window, mode='valid')
+    smoothed_velocity = np.convolve(data_array, gaussian_1d, mode='valid')
+    smoothed_acceleration = np.convolve(data_array, gaussian_2d, mode='valid')
+
+    return smoothed_position, smoothed_velocity, smoothed_acceleration
