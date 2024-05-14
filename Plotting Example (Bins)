@@ -1,0 +1,295 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+from Gaussian_Smoothing import gaussianSmoothing
+import statsmodels.api as sm
+import pandas as pd
+import seaborn as sns
+
+parent_directory = '/Desktop/EURP Reseach/Particle Dynamics'
+cmap = plt.get_cmap('brg')
+width = 0.01
+
+filenames = ['10X20newtank1.500',
+             '10X20newtank2.500',
+             '10X20newtank3.500',
+             '10X20newtank4.500',
+             '10X20newtank5.500',
+             '10X20newtank6.500',
+             '10X20newtank7.500',
+             '10X20newtank8.500',
+             '10X20newtank9.500',
+             '10X20newtank10.500',
+             '10X20newtank11.500',
+             '10X20newtank12.500',
+             '10X20newtank13.500',
+             '10X20newtank14.500',
+             '10X20newtank16.500',
+             '10X20newtank17.500',
+             '10X20newtank18.500',
+             '10X20newtank19.500',
+             '10X20newtank20.500']
+
+polar_010 = []
+polar_1020 = []
+polar_2030 = []
+polar_3040 = []
+polar_4050 = []
+polar_5060 = []
+polar_60plus = []
+sphere_datax = []
+sphere_datay = []
+
+fig, ax1 = plt.subplots()
+
+for name in filenames:
+    filename = name
+    position = filenames.index(filename)
+
+    # define the name of the drop folder
+    drop_folder = f"{filename.split('.')[0]}.data"
+
+    # join the drop folder to the main directory
+    full_path = os.path.join(parent_directory, drop_folder)
+
+    # make the folder
+    os.makedirs(full_path, exist_ok=True)
+    data_path = os.path.join(full_path, 'lists')
+    os.makedirs(data_path, exist_ok=True)
+
+    # Read the raw data
+    with open(f'{data_path}/object_size', 'r') as file:
+        object_size = file.readlines()
+    object_size = [float(line.strip()) for line in object_size]
+
+    pixel_to_meter = width / float(object_size[0])
+
+    with open(f'{data_path}/z_data', 'r') as file:
+        positionz_list = file.readlines()
+    positionz_list = [pixel_to_meter*float(line.strip()) for line in positionz_list]
+
+    with open(f'{data_path}/x_data', 'r') as file:
+        positionx_list = file.readlines()
+    positionx_list = [pixel_to_meter*float(line.strip()) for line in positionx_list]
+
+    with open(f'{data_path}/po_data', 'r') as file:
+        ip_angle_list = file.readlines()
+    ip_angle_list = [float(line.strip()) for line in ip_angle_list]
+
+    with open(f'{data_path}/frame_size', 'r') as file:
+        frame_size = file.readlines()
+    frame_size = [float(line.strip()) for line in frame_size]
+
+    # smooth the data
+    smooth_z_p, smooth_z_v, smooth_z_a = gaussianSmoothing(51, positionz_list)
+    smooth_x_p, smooth_x_v, smooth_x_a = gaussianSmoothing(51, positionx_list)
+    smooth_po_angle, smooth_po_v, smooth_po_a = gaussianSmoothing(51, ip_angle_list)
+    smooth_po_angle = np.array(np.deg2rad(smooth_po_angle))
+
+    # find the absolute theta in the direction of motion
+    theta = np.arctan2(smooth_z_v, smooth_x_v)
+    smooth_po_angle = smooth_po_angle - (np.pi / 2 - theta)
+
+    N = len(smooth_po_angle)
+    # convert to m/s
+    smooth_x_v = 500 * np.array(smooth_x_v)
+    smooth_x_a = 500 ** 2 * np.array(smooth_x_a)
+    smooth_z_v = 500 * np.array(smooth_z_v)
+    smooth_z_a = 500 ** 2 * np.array(smooth_z_a)
+
+    diameter = 10 * 10 ** -3
+    height = 20 * 10 ** -3
+
+    # establish constants
+    g = 9.81  # m/s
+    rho_w = 997  # water density (kg/m^3)
+    rho_p = 1156  # PLA density (kg/m^3)
+    mu = 0.001  # dynamic viscocity (N*s/m)
+
+    # calculate the mass and volume
+    V = np.pi * (diameter / 2) ** 2 * height  # m^3
+    d_eq = 14.4224957 * 10 ** -3
+
+    A_sphere = (np.pi * d_eq ** 2) / 4
+    m = V * rho_p  # kg
+    rho = rho_p / rho_w
+    Cm = 0.5
+    Cd_sphere = 2 / (rho_w * A_sphere * smooth_z_v ** 2) * (V*g*(rho_p - rho_w) - m*smooth_z_a)
+    Reynolds = (rho_w * smooth_z_v * diameter) / mu
+    sphere_datax.append(Reynolds)
+    sphere_datay.append(Cd_sphere)
+
+    for i in range(N):
+        variable_height = np.absolute(height * (np.cos(smooth_po_angle[i]))) + np.absolute(diameter * (np.sin(smooth_po_angle[i])))
+        A = diameter * variable_height  # m^2
+        Cd = 2 * V * (rho) / (smooth_z_v[i] ** 2 * A) * ((g * (rho - 1) / (rho)) - smooth_z_a[i])
+        Re = (rho_w * smooth_z_v[i] * diameter) / mu
+
+        if 0 <= np.rad2deg(smooth_po_angle[i]) <= 10:
+            polar_010.append([Re, Cd])
+
+        if 10 < np.rad2deg(smooth_po_angle[i]) <= 20:
+            polar_1020.append([Re, Cd])
+
+        if 20 < np.rad2deg(smooth_po_angle[i]) <= 30:
+            polar_2030.append([Re, Cd])
+
+        if 30 < np.rad2deg(smooth_po_angle[i]) <= 40:
+            polar_3040.append([Re, Cd])
+
+        if 40 < np.rad2deg(smooth_po_angle[i]) <= 50:
+            polar_4050.append([Re, Cd])
+
+        if 50 < np.rad2deg(smooth_po_angle[i]) <= 60:
+            polar_5060.append([Re, Cd])
+
+        if 60 < np.rad2deg(smooth_po_angle[i]) <=100:
+            polar_60plus.append([Re, Cd])
+            print(smooth_po_angle[i])
+        Re = (rho_w * smooth_z_v * diameter) / mu
+
+    print(len(polar_010), len(polar_1020), len(polar_2030), len(polar_3040), len(polar_5060), len(polar_60plus))
+
+
+def Re_Bins(list):
+    bins = [[], [], [], [], [], [] , [], [], [], [], []]
+    for i in range(len(list)):
+        Re_value = list[i][0]
+        if 1400 < Re_value < 1450:
+            bins[0].append(list[i])
+
+        if 1450 < Re_value < 1500:
+            bins[1].append(list[i])
+
+        if 1500 < Re_value < 1550:
+            bins[2].append(list[i])
+
+        if 1550 < Re_value < 1600:
+            bins[3].append(list[i])
+
+        if 1600 < Re_value < 1650:
+            bins[4].append(list[i])
+
+        if 1650 < Re_value < 1700:
+            bins[5].append(list[i])
+
+        if 1700 < Re_value < 1750:
+            bins[6].append(list[i])
+
+        if 1750 < Re_value < 1800:
+            bins[7].append(list[i])
+
+        if 1800 < Re_value < 1850:
+            bins[8].append(list[i])
+
+        if 1850 < Re_value < 1900:
+            bins[9].append(list[i])
+
+        if 1900 < Re_value:
+            bins[10].append(list[i])
+
+
+
+    return_list = []
+    for i in range(len(bins)):
+        Re_list = []
+        Cd_list=[]
+        for j in range(len(bins[i])):
+            [Re_num, Cd_num] = bins[i][j]
+            Re_list.append(Re_num)
+            Cd_list.append(Cd_num)
+        return_list.append([np.average(Re_list), np.average(Cd_list)])
+
+    return return_list
+
+polar_010_Re = Re_Bins(polar_010)
+polar_1020_Re = Re_Bins(polar_1020)
+polar_2030_Re = Re_Bins(polar_2030)
+polar_3040_Re = Re_Bins(polar_3040)
+polar_4050_Re = Re_Bins(polar_4050)
+polar_5060_Re = Re_Bins(polar_5060)
+polar_60plus_Re = Re_Bins(polar_60plus)
+
+# ax1.plot([x[0] for x in polar_010_Re],[y[1] for y in polar_010_Re], c='red', label='0-10 degrees')
+# ax1.plot([x[0] for x in polar_1020_Re],[y[1] for y in polar_1020_Re], c='orange', label='10-20 degrees')
+# ax1.plot([x[0] for x in polar_2030_Re],[y[1] for y in polar_2030_Re], c='yellow', label='20-30 degrees')
+# ax1.plot([x[0] for x in polar_3040_Re], [y[1] for y in polar_3040_Re], c='green', label='30-40 degrees')
+# ax1.plot([x[0] for x in polar_4050_Re], [y[1] for y in polar_4050_Re], c='blue', label='40-50 degrees')
+# ax1.plot([x[0] for x in polar_5060_Re], [y[1] for y in polar_5060_Re], c='indigo', label='50-60 degrees')
+# ax1.plot([x[0] for x in polar_60plus_Re], [y[1] for y in polar_60plus_Re], c='violet', label='60+ degrees')
+
+ax1.scatter([x[0] for x in polar_010],[y[1] for y in polar_010], c='red', label='0-10 degrees', s=2)
+ax1.scatter([x[0] for x in polar_1020],[y[1] for y in polar_1020], c='orange', label='10-20 degrees', s=2)
+ax1.scatter([x[0] for x in polar_2030],[y[1] for y in polar_2030], c='yellow', label='20-30 degrees', s=2)
+ax1.scatter([x[0] for x in polar_3040], [y[1] for y in polar_3040], c='green', label='30-40 degrees', s=2)
+ax1.scatter([x[0] for x in polar_4050], [y[1] for y in polar_4050], c='blue', label='40-50 degrees', s=2)
+ax1.scatter([x[0] for x in polar_5060], [y[1] for y in polar_5060], c='indigo', label='50-60 degrees', s=2)
+ax1.scatter([x[0] for x in polar_60plus], [y[1] for y in polar_60plus], c='violet', label='60+ degrees', s=2)
+
+Re_list = [x[0] for x in polar_010]
+N = 100
+# print(sphere_datay)
+# ax1.plot(Re_range, Re_range * -0.001 + polar_range * -0.0013 + 2.5421, c='black', label='Predicted Value')
+# for i in range(len(sphere_datax)):
+#     ax1.plot(sphere_datax[i], sphere_datay[i])
+ax1.set_xlabel("Re")
+ax1.set_ylabel("Cd")
+ax1.legend()
+
+# fig2, [[ax2, ax3, ax4], [ax5, ax6, ax7]] = plt.subplots(2, 3)
+# ax2.hist([x[0] for x in polar_010], label=f'n = {str(len([x[0] for x in polar_010]))}')
+# ax2.set_title("0-10 Degrees")
+# ax3.hist([x[0] for x in polar_1020], label=f'n = {str(len([x[0] for x in polar_1020]))}')
+# ax3.set_title("10-20 Degrees")
+# ax4.hist([x[0] for x in polar_2030], label=f'n = {str(len([x[0] for x in polar_2030]))}')
+# ax4.set_title("20-30 Degrees")
+# ax5.hist([x[0] for x in polar_3040], label=f'n = {str(len([x[0] for x in polar_3040]))}')
+# ax5.set_title("30-40 Degrees")
+# ax6.hist([x[0] for x in polar_4050], label=f'n = {str(len([x[0] for x in polar_4050]))}')
+# ax6.set_title("40-50 Degrees")
+# ax7.hist([x[0] for x in polar_5060], label=f'n = {str(len([x[0] for x in polar_5060]))}')
+# ax7.set_title("50-60 Degrees")
+# ax2.legend()
+# ax2.set_xlabel("Re")
+# ax3.legend()
+# ax3.set_xlabel("Re")
+# ax4.legend()
+# ax4.set_xlabel("Re")
+# ax5.legend()
+# ax5.set_xlabel("Re")
+# ax6.legend()
+# ax6.set_xlabel("Re")
+# ax7.legend()
+# ax7.set_xlabel("Re")
+# fig2.tight_layout()
+
+Sphere=[]
+for i in range(len(sphere_datay)):
+    Sphere.extend(sphere_datay[i].tolist())
+
+plt.figure(2)
+data = [[x[0] for x in polar_010], [x[0] for x in polar_1020], [x[0] for x in polar_2030], [x[0] for x in polar_3040],
+        [x[0] for x in polar_4050], [x[0] for x in polar_5060], [x[0] for x in polar_60plus]]
+
+for value in data:
+    sns.kdeplot(value)
+# sns.kdeplot(data, common_norm=True)
+
+# plt.legend(['60+ degrees', '50-60 degrees', '40-50 degrees', '30-40 degrees', '20-30 degrees', '10-20 degrees', '0-10 degrees'])
+plt.legend(['0-10 degrees', '10-20 degrees', '20-30 degrees', '30-40 degrees', '40-50 degrees','50-60 degrees', '60+ degrees'])
+plt.xlabel('Re')
+
+plt.figure(3)
+data2 = [[x[1] for x in polar_010], [x[1] for x in polar_1020], [x[1] for x in polar_2030], [x[1] for x in polar_3040],
+        [x[1] for x in polar_4050], [x[1] for x in polar_5060], [x[1] for x in polar_60plus]]
+
+for value in data2:
+    sns.kdeplot(value)
+# plot2 = sns.kdeplot(data2, common_norm=True)
+# plt.legend(['60+ degrees', '50-60 degrees', '40-50 degrees', '30-40 degrees', '20-30 degrees', '10-20 degrees', '0-10 degrees'])
+plt.legend(['0-10 degrees', '10-20 degrees', '20-30 degrees', '30-40 degrees', '40-50 degrees','50-60 degrees', '60+ degrees'])
+
+plt.xlabel('Cd')
+
+plt.show()
+
